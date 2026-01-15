@@ -1,106 +1,69 @@
 import streamlit as st
 import pandas as pd
-import datetime
+import plotly.express as px
+from streamlit_gsheets import GSheetsConnection
 
-# Configuration de la page
-st.set_page_config(page_title="Suivi de Forme", page_icon="🏥", layout="centered")
+st.set_page_config(page_title="Dashboard Santé", layout="wide")
 
-# --- FONCTION DE COULEUR DYNAMIQUE ---
-def get_visual_indicator(value):
-    # Dégradé du vert (1) au rouge (10)
-    colors = ["#22c55e", "#4ade80", "#84cc16", "#a8d810", "#eab308", 
-              "#f59e0b", "#f97316", "#ea580c", "#dc2626", "#b91d1d"]
-    color = colors[value-1]
-    
-    # Barre de progression et texte coloré
-    html = f"""
-    <div style="background-color: #e2e8f0; border-radius: 10px; width: 100%; height: 12px; margin-top: 10px;">
-        <div style="background-color: {color}; width: {value*10}%; height: 12px; border-radius: 10px; transition: width 0.3s ease;"></div>
-    </div>
-    <div style="color: {color}; font-weight: bold; font-size: 18px; margin-top: 5px;">
-        Niveau actuel : {value} / 10
-    </div>
-    """
-    return html
+# --- CONNEXION CLOUD ---
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    # Chargement des données historiques
+    df_history = conn.read()
+except:
+    st.error("Impossible de se connecter au Cloud. Vérifiez vos secrets.")
+    df_history = pd.DataFrame()
 
-# --- TITRE ---
-st.title("🏥 Suivi d'État de Forme")
-st.markdown("---")
+# --- INTERFACE ---
+st.title("🏥 Analyse de l'État de Forme")
 
-# --- SÉLECTION DU PATIENT ---
-# Dans une version réelle, cette liste pourrait provenir de votre base de données Cloud
-liste_patients = ["Choisir un patient...", "Jean Dupont", "Marie Curie", "Léonard de Vinci", "Sophie Germain"]
-nom_patient = st.selectbox(
-    "👤 Sélectionner le nom du patient :",
-    options=liste_patients,
-    index=0
-)
+# Création de deux onglets : un pour la saisie, un pour l'analyse
+tab1, tab2 = st.tabs(["📝 Saisie Patient", "📈 Historique & Analyse"])
 
-st.write("") # Espacement
+with tab1:
+    st.info("Utilisez cet onglet pour enregistrer de nouvelles données (voir code précédent).")
+    # Insérez ici votre code de saisie précédent...
 
-# On n'affiche la suite que si un patient est sélectionné
-if nom_patient != "Choisir un patient...":
-    
-    # --- 1. DOULEUR ---
-    st.write("### 1. Évaluation de la Douleur")
-    douleur = st.select_slider(
-        "Faites glisser le curseur (1 = Faible, 10 = Intense)",
-        options=list(range(1, 11)),
-        key="slider_douleur"
-    )
-    st.markdown(get_visual_indicator(douleur), unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- 2. BIEN-ÊTRE ---
-    st.write("### 2. Bien-être Mental (Indice WHO-5)")
-    st.write("**Au cours des 2 dernières semaines, je me suis senti(e) gai(e) et de bonne humeur :**")
-    options_be = {
-        "Tout le temps": 5, 
-        "La plupart du temps": 4, 
-        "Plus de la moitié du temps": 3, 
-        "Moins de la moitié du temps": 2, 
-        "De temps en temps": 1, 
-        "Jamais": 0
-    }
-    choix_psy = st.radio("Sélectionnez votre ressenti :", options=list(options_be.keys()), horizontal=True)
-
-    st.divider()
-
-    # --- 3. FATIGUE ---
-    st.write("### 3. Niveau de Fatigue")
-    fatigue = st.select_slider(
-        "Faites glisser le curseur (1 = Forme, 10 = Épuisement)",
-        options=list(range(1, 11)),
-        value=5,
-        key="slider_fatigue"
-    )
-    st.markdown(get_visual_indicator(fatigue), unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- BOUTON D'ENREGISTREMENT ---
-    if st.button(f"🚀 Enregistrer les données pour {nom_patient}"):
-        st.balloons()
+with tab2:
+    if not df_history.empty:
+        st.subheader("Visualisation de l'évolution temporelle")
         
-        # Préparation des données pour le Cloud
-        resultats = {
-            "Date": datetime.datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "Patient": nom_patient,
-            "Douleur": douleur,
-            "Bien_etre_Score": options_be[choix_psy],
-            "Fatigue": fatigue
-        }
+        # Filtre par patient
+        patients = df_history["Patient"].unique()
+        patient_sel = st.selectbox("Sélectionnez un patient pour voir son historique :", patients)
         
-        st.success(f"✅ Les données de **{nom_patient}** ont été enregistrées.")
-        
-        # Affichage du récapitulatif
-        st.write("### Récapitulatif envoyé :")
-        st.table(pd.DataFrame([resultats]))
+        # Filtrage des données
+        df_patient = df_history[df_history["Patient"] == patient_sel].copy()
+        df_patient["Date"] = pd.to_datetime(df_patient["Date"])
+        df_patient = df_patient.sort_values("Date")
 
-else:
-    st.warning("Veuillez sélectionner un nom de patient pour commencer le questionnaire.")
+        # Affichage des graphiques sur deux colonnes
+        col1, col2 = st.columns(2)
 
-# --- PIED DE PAGE ---
-st.sidebar.markdown("### Aide")
-st.sidebar.info("Les indicateurs utilisés (EVA, WHO-5, FACIT-F) sont des échelles cliniques validées scientifiquement.")
+        with col1:
+            st.write("#### Évolution de la Douleur")
+            fig_douleur = px.line(
+                df_patient, x="Date", y="Douleur", 
+                title=f"Douleur - {patient_sel}",
+                markers=True, line_shape="spline",
+                color_discrete_sequence=["#dc2626"] # Rouge
+            )
+            fig_douleur.update_yaxes(range=[0, 11])
+            st.plotly_chart(fig_douleur, use_container_width=True)
+
+        with col2:
+            st.write("#### Évolution de la Fatigue")
+            fig_fatigue = px.line(
+                df_patient, x="Date", y="Fatigue", 
+                title=f"Fatigue - {patient_sel}",
+                markers=True, line_shape="spline",
+                color_discrete_sequence=["#f59e0b"] # Orange
+            )
+            fig_fatigue.update_yaxes(range=[0, 11])
+            st.plotly_chart(fig_fatigue, use_container_width=True)
+
+        # Affichage du tableau brut
+        with st.expander("Voir les données brutes"):
+            st.dataframe(df_patient)
+    else:
+        st.warning("Aucune donnée trouvée dans le Cloud pour générer les graphiques.")
