@@ -3,74 +3,71 @@ import pandas as pd
 import datetime
 
 # Configuration
-st.set_page_config(page_title="Santé Connectée", page_icon="🏥", layout="centered")
+st.set_page_config(page_title="Suivi de Forme", page_icon="🏥")
 
 # --- FONCTION DE COULEUR ---
-def get_info_box(label, value):
-    # Palette du vert (1) au rouge (10)
-    colors = {
-        1: "#22c55e", 2: "#4ade80", 3: "#84cc16", 4: "#a8d810", 
-        5: "#eab308", 6: "#f59e0b", 7: "#f97316", 8: "#ea580c", 
-        9: "#dc2626", 10: "#b91d1d"
-    }
-    color = colors.get(value, "#2563eb")
-    # Retourne un badge HTML stylisé
-    return f"""
-    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-        <span style="font-weight: bold; margin-right: 10px;">{label} :</span>
-        <div style="background-color:{color}; color:white; padding:5px 15px; border-radius:20px; font-weight:bold; font-size:18px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-            {value} / 10
-        </div>
+def get_visual_indicator(value):
+    # Dégradé du vert au rouge
+    colors = ["#22c55e", "#4ade80", "#84cc16", "#a8d810", "#eab308", "#f59e0b", "#f97316", "#ea580c", "#dc2626", "#b91d1d"]
+    color = colors[value-1]
+    
+    # Barre de progression colorée personnalisée
+    html = f"""
+    <div style="background-color: #e2e8f0; border-radius: 10px; width: 100%; height: 12px; margin-top: 10px;">
+        <div style="background-color: {color}; width: {value*10}%; height: 12px; border-radius: 10px; transition: width 0.3s ease;"></div>
+    </div>
+    <div style="color: {color}; font-weight: bold; font-size: 20px; margin-top: 5px;">
+        Score : {value} / 10
     </div>
     """
+    return html
 
-st.title("🏥 Mon Suivi de Santé")
-st.markdown("---")
+st.title("🏥 Suivi d'État de Forme")
+st.info("Déplacez les curseurs pour voir l'indicateur de couleur changer en temps réel.")
 
-# --- FORMULAIRE ---
-with st.form("health_form"):
+# --- QUESTIONS (HORS FORMULAIRE POUR LE TEMPS RÉEL) ---
+
+# 1. DOULEUR
+st.write("### 1. Évaluation de la Douleur")
+douleur = st.select_slider(
+    "1 = Très faible | 10 = Insupportable",
+    options=list(range(1, 11)),
+    key="slider_d"
+)
+st.markdown(get_visual_indicator(douleur), unsafe_allow_html=True)
+
+st.divider()
+
+# 2. BIEN-ÊTRE
+st.write("### 2. Bien-être Mental")
+options_be = {"Tout le temps": 5, "La plupart du temps": 4, "Plus de la moitié du temps": 3, "Moins de la moitié du temps": 2, "De temps en temps": 1, "Jamais": 0}
+choix_psy = st.radio("Sensation de gaieté au cours des 2 dernières semaines :", options=list(options_be.keys()), horizontal=True)
+
+st.divider()
+
+# 3. FATIGUE
+st.write("### 3. Niveau de Fatigue")
+fatigue = st.select_slider(
+    "1 = Forme olympique | 10 = Épuisement total",
+    options=list(range(1, 11)),
+    value=5,
+    key="slider_f"
+)
+st.markdown(get_visual_indicator(fatigue), unsafe_allow_html=True)
+
+st.divider()
+
+# --- BOUTON D'ENREGISTREMENT ---
+if st.button("🚀 Enregistrer les données dans le Cloud"):
+    # Ici, on simule l'enregistrement
+    st.balloons()
+    st.success(f"Données enregistrées le {datetime.datetime.now().strftime('%d/%m/%Y')}")
     
-    # 1. DOULEUR
-    st.write("### 1. Évaluation de la Douleur")
-    # On place un container vide pour l'affichage dynamique
-    douleur = st.select_slider(
-        "Faites glisser le curseur (1 = Faible, 10 = Intense)",
-        options=list(range(1, 11)),
-        value=1
-    )
-    st.markdown(get_info_box("Niveau de douleur", douleur), unsafe_allow_html=True)
-    
-    st.divider()
-
-    # 2. BIEN-ÊTRE
-    st.write("### 2. Bien-être Mental")
-    st.write("Au cours des 2 dernières semaines, je me suis senti(e) gai(e) et de bonne humeur :")
-    options_be = {
-        "Tout le temps": 5, "La plupart du temps": 4, 
-        "Plus de la moitié du temps": 3, "Moins de la moitié du temps": 2, 
-        "De temps en temps": 1, "Jamais": 0
-    }
-    choix_psy = st.radio("Sélectionnez votre ressenti :", options=list(options_be.keys()), horizontal=True)
-
-    st.divider()
-
-    # 3. FATIGUE
-    st.write("### 3. Niveau de Fatigue")
-    fatigue = st.slider("Intensité (1 = Forme olympique, 10 = Épuisement)", 1, 10, 5)
-    st.markdown(get_info_box("Niveau de fatigue", fatigue), unsafe_allow_html=True)
-
-    st.write("")
-    submitted = st.form_submit_button("🚀 Enregistrer les données dans le Cloud")
-
-# --- TRAITEMENT DES DONNÉES ---
-if submitted:
-    st.success("✅ Vos indicateurs ont été enregistrés avec succès.")
-    
-    # Préparation pour le cloud
-    data_to_save = {
-        "Date": datetime.datetime.now().strftime("%Y-%m-%d"),
+    # Résumé pour vérification
+    resultats = {
         "Douleur": douleur,
-        "Bien-etre": options_be[choix_psy],
+        "Bien-être (Score)": options_be[choix_psy],
         "Fatigue": fatigue
     }
-    st.json(data_to_save)
+    st.write("### Résumé des indicateurs :")
+    st.dataframe(pd.DataFrame([resultats]))
