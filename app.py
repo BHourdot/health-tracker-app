@@ -1,83 +1,74 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import plotly.express as px
+from streamlit_gsheets import GSheetsConnection
 
 # Configuration de la page
-st.set_page_config(page_title="Suivi État de Forme", page_icon="🏥", layout="centered")
+st.set_page_config(page_title="Santé Connectée", page_icon="🏥")
 
-# --- STYLE PERSONNALISÉ ---
-st.markdown("""
+# --- FONCTION POUR LA COULEUR ---
+def get_color(value):
+    # Du vert (0) au rouge (10)
+    colors = ["#22c55e", "#4ade80", "#84cc16", "#a8d810", "#eab308", 
+              "#f59e0b", "#f97316", "#ea580c", "#dc2626", "#b91d1d", "#7f1d1d"]
+    return colors[int(value)]
+
+# --- CONNEXION CLOUD (Google Sheets) ---
+# Note : Nécessite la configuration des secrets sur Streamlit Cloud
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+except:
+    conn = None
+
+# --- STYLE CSS ---
+st.markdown(f"""
     <style>
-    .main { background-color: #f8fafc; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #2563eb; color: white; }
-    .stProgress > div > div > div > div { background-color: #2563eb; }
+    .stSlider [data-baseweb="slider"] {{ background-image: linear-gradient(to right, #22c55e, #eab308, #dc2626); border-radius: 10px; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- TITRE ET INTRODUCTION ---
-st.title("🏥 Mon Suivi de Santé")
-st.subheader("Collecte d'indicateurs cliniques")
-st.info("Ces questionnaires sont basés sur des échelles validées scientifiquement (EVA, WHO-5, FACIT-F).")
+st.title("🏥 Suivi d'État de Forme")
 
-# --- FORMULAIRE DE COLLECTE ---
 with st.form("health_form"):
-    st.write("### 1. Évaluation de la Douleur (Échelle EVA)")
-    douleur = st.select_slider(
-        "Sur une échelle de 0 à 10, quel est votre niveau de douleur aujourd'hui ?",
-        options=list(range(11)),
-        help="0 = Aucune douleur, 10 = Douleur maximale imaginable"
-    )
+    # --- DOULEUR ---
+    st.write("### 1. Niveau de Douleur (EVA)")
+    douleur = st.select_slider("Glissez pour évaluer", options=list(range(11)), value=0)
+    st.markdown(f'<div style="height:10px; width:100%; background-color:{get_color(douleur)}; border-radius:5px;"></div>', unsafe_allow_html=True)
+    
+    st.divider()
+
+    # --- BIEN-ÊTRE ---
+    st.write("### 2. Bien-être Mental (WHO-5)")
+    psy_score = st.radio("Sensation de gaieté :", [5, 4, 3, 2, 1, 0], horizontal=True, 
+                         help="5 = Tout le temps, 0 = Jamais")
 
     st.divider()
 
-    st.write("### 2. Bien-être Mental (Indice WHO-5)")
-    st.caption("Au cours des deux dernières semaines...")
-    psy_score = st.radio(
-        "Je me suis senti(e) gai(e) et de bonne humeur :",
-        ["Tout le temps (5)", "La plupart du temps (4)", "Plus de la moitié du temps (3)", 
-         "Moins de la moitié du temps (2)", "De temps en temps (1)", "Jamais (0)"],
-        horizontal=True
-    )
-
-    st.divider()
-
+    # --- FATIGUE ---
     st.write("### 3. Niveau de Fatigue (FACIT-F)")
-    fatigue = st.slider("À quel point vous sentez-vous fatigué(e) ?", 0, 10, 5)
+    fatigue = st.slider("Intensité de la fatigue", 0, 10, 5)
+    st.markdown(f'<div style="height:10px; width:100%; background-color:{get_color(fatigue)}; border-radius:5px;"></div>', unsafe_allow_html=True)
 
-    # Bouton de soumission
-    submitted = st.form_submit_button("Enregistrer les données")
+    submitted = st.form_submit_button("Envoyer les résultats au Cloud")
 
-# --- GESTION DES DONNÉES ---
+# --- GESTION DU CLOUD ---
 if submitted:
-    # Simulation de stockage (Dans une vraie app, on utiliserait une DB ou un CSV)
-    data = {
-        "Date": [datetime.date.today()],
-        "Douleur": [douleur],
-        "Bien-être": [int(psy_score[-2])],
-        "Fatigue": [fatigue]
-    }
-    df = pd.DataFrame(data)
-    
-    st.success("✅ Données enregistrées avec succès !")
-    
-    # --- VISUALISATION ---
-    st.write("### 📈 Aperçu de votre évolution")
-    
-    # Simulation d'historique pour le graphique
-    history_data = {
-        "Date": pd.date_range(end=datetime.date.today(), periods=5),
-        "Score": [4, 6, 5, 7, (10 - fatigue)] # On inverse la fatigue pour le graphique
-    }
-    df_hist = pd.DataFrame(history_data)
-    
-    fig = px.line(df_hist, x="Date", y="Score", title="Évolution de la Vitalité (Score inverse de fatigue)",
-                  markers=True, line_shape="spline")
-    fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True)
+    new_data = pd.DataFrame([{
+        "Date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "Douleur": douleur,
+        "Bien_etre": psy_score,
+        "Fatigue": fatigue
+    }])
 
-# --- PIED DE PAGE ---
-st.sidebar.title("Paramètres")
-st.sidebar.write("Identifiant Patient: **#4092**")
-if st.sidebar.button("Exporter les données (CSV)"):
-    st.sidebar.write("Préparation du fichier...")
+    if conn:
+        try:
+            # Récupérer les données existantes et ajouter les nouvelles
+            existing_data = conn.read()
+            updated_df = pd.concat([existing_data, new_data], ignore_index=True)
+            conn.update(data=updated_df)
+            st.success("✅ Données synchronisées avec le Google Sheet !")
+        except Exception as e:
+            st.warning("⚠️ Connecté mais impossible d'écrire. Vérifiez les permissions.")
+    else:
+        st.info("💡 Mode démo : Les données seraient envoyées sur votre Cloud ici.")
+        st.table(new_data)
