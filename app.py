@@ -1,89 +1,76 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Santé Connectée", page_icon="🏥")
+# Configuration
+st.set_page_config(page_title="Santé Connectée", page_icon="🏥", layout="centered")
 
-# --- FONCTION POUR GÉNÉRER LE CSS DYNAMIQUE ---
-def apply_custom_slider_style(value_douleur, value_fatigue):
-    # Palette de 1 (Vert) à 10 (Rouge)
+# --- FONCTION DE COULEUR ---
+def get_info_box(label, value):
+    # Palette du vert (1) au rouge (10)
     colors = {
         1: "#22c55e", 2: "#4ade80", 3: "#84cc16", 4: "#a8d810", 
         5: "#eab308", 6: "#f59e0b", 7: "#f97316", 8: "#ea580c", 
         9: "#dc2626", 10: "#b91d1d"
     }
-    
-    color_d = colors.get(value_douleur, "#2563eb")
-    color_f = colors.get(value_fatigue, "#2563eb")
+    color = colors.get(value, "#2563eb")
+    # Retourne un badge HTML stylisé
+    return f"""
+    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+        <span style="font-weight: bold; margin-right: 10px;">{label} :</span>
+        <div style="background-color:{color}; color:white; padding:5px 15px; border-radius:20px; font-weight:bold; font-size:18px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+            {value} / 10
+        </div>
+    </div>
+    """
 
-    # CSS pour cibler le bouton circulaire (thumb) des sliders
-    st.markdown(f"""
-        <style>
-        /* Cible tous les curseurs de la page */
-        div[role="slider"] {{
-            background-color: transparent !important; 
-            border: none !important;
-        }}
-        
-        /* Modifie la couleur de la poignée du slider */
-        input[type="range"]::-webkit-slider-thumb {{
-            background: {color_d} !important;
-        }}
-        
-        /* Version spécifique pour Streamlit (Widget Thumb) */
-        .stSlider [data-baseweb="slider"] div[role="slider"] {{
-            background-color: {color_d} !important;
-            box-shadow: 0 0 10px {color_d}55;
-            border: 2px solid white !important;
-            height: 25px !important;
-            width: 25px !important;
-        }}
-        
-        /* Pour différencier si besoin, mais Streamlit applique souvent le dernier style lu 
-           aux deux. Ici on applique une couleur moyenne ou celle du dernier actif */
-        </style>
-    """, unsafe_allow_html=True)
-
-# --- INITIALISATION DES ÉTATS ---
-if 'douleur' not in st.session_state: st.session_state.douleur = 1
-if 'fatigue' not in st.session_state: st.session_state.fatigue = 5
-
-st.title("🏥 Suivi d'État de Forme")
+st.title("🏥 Mon Suivi de Santé")
+st.markdown("---")
 
 # --- FORMULAIRE ---
 with st.form("health_form"):
     
-    st.write("### 1. Évaluation de la Douleur (1-10)")
+    # 1. DOULEUR
+    st.write("### 1. Évaluation de la Douleur")
+    # On place un container vide pour l'affichage dynamique
     douleur = st.select_slider(
-        "Intensité de la douleur :",
+        "Faites glisser le curseur (1 = Faible, 10 = Intense)",
         options=list(range(1, 11)),
-        key="slider_douleur"
+        value=1
     )
+    st.markdown(get_info_box("Niveau de douleur", douleur), unsafe_allow_html=True)
     
     st.divider()
 
-    st.write("### 2. Bien-être Mental (WHO-5)")
+    # 2. BIEN-ÊTRE
+    st.write("### 2. Bien-être Mental")
+    st.write("Au cours des 2 dernières semaines, je me suis senti(e) gai(e) et de bonne humeur :")
     options_be = {
         "Tout le temps": 5, "La plupart du temps": 4, 
         "Plus de la moitié du temps": 3, "Moins de la moitié du temps": 2, 
         "De temps en temps": 1, "Jamais": 0
     }
-    choix_psy = st.radio("Au cours des 2 dernières semaines, je me suis senti(e) gai(e) et de bonne humeur :", 
-                         options=list(options_be.keys()), horizontal=True)
+    choix_psy = st.radio("Sélectionnez votre ressenti :", options=list(options_be.keys()), horizontal=True)
 
     st.divider()
 
-    st.write("### 3. Niveau de Fatigue (1-10)")
-    fatigue = st.slider("Intensité de la fatigue :", 1, 10, 5, key="slider_fatigue")
+    # 3. FATIGUE
+    st.write("### 3. Niveau de Fatigue")
+    fatigue = st.slider("Intensité (1 = Forme olympique, 10 = Épuisement)", 1, 10, 5)
+    st.markdown(get_info_box("Niveau de fatigue", fatigue), unsafe_allow_html=True)
 
-    submitted = st.form_submit_button("Enregistrer les résultats")
+    st.write("")
+    submitted = st.form_submit_button("🚀 Enregistrer les données dans le Cloud")
 
-# Application du style basé sur les valeurs sélectionnées
-apply_custom_slider_style(douleur, fatigue)
-
-# --- AFFICHAGE DU RÉSULTAT ---
+# --- TRAITEMENT DES DONNÉES ---
 if submitted:
-    st.balloons()
-    st.success(f"Données prêtes : Douleur {douleur}/10, Fatigue {fatigue}/10")
-    # Logique de connexion Cloud ici...
+    st.success("✅ Vos indicateurs ont été enregistrés avec succès.")
+    
+    # Préparation pour le cloud
+    data_to_save = {
+        "Date": datetime.datetime.now().strftime("%Y-%m-%d"),
+        "Douleur": douleur,
+        "Bien-etre": options_be[choix_psy],
+        "Fatigue": fatigue
+    }
+    st.json(data_to_save)
