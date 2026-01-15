@@ -1,69 +1,109 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import datetime
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Dashboard Santé", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Santé Connectée", layout="wide", page_icon="🏥")
 
 # --- CONNEXION CLOUD ---
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Chargement des données historiques
-    df_history = conn.read()
-except:
-    st.error("Impossible de se connecter au Cloud. Vérifiez vos secrets.")
-    df_history = pd.DataFrame()
+except Exception as e:
+    st.error("Erreur de connexion au Cloud.")
+    conn = None
 
-# --- INTERFACE ---
-st.title("🏥 Analyse de l'État de Forme")
+# --- FONCTIONS UTILITAIRES ---
+def get_visual_indicator(value):
+    colors = ["#22c55e", "#4ade80", "#84cc16", "#a8d810", "#eab308", "#f59e0b", "#f97316", "#ea580c", "#dc2626", "#b91d1d"]
+    color = colors[value-1]
+    return f"""
+    <div style="background-color: #e2e8f0; border-radius: 10px; width: 100%; height: 10px; margin-top: 10px;">
+        <div style="background-color: {color}; width: {value*10}%; height: 10px; border-radius: 10px;"></div>
+    </div>
+    <div style="color: {color}; font-weight: bold; margin-top: 5px;">Niveau : {value}/10</div>
+    """
 
-# Création de deux onglets : un pour la saisie, un pour l'analyse
-tab1, tab2 = st.tabs(["📝 Saisie Patient", "📈 Historique & Analyse"])
+# --- MENU LATÉRAL ---
+st.sidebar.title("🩺 Navigation")
+page = st.sidebar.radio("Aller vers :", ["📝 Recueil des données", "📊 Visualisation Historique"])
 
-with tab1:
-    st.info("Utilisez cet onglet pour enregistrer de nouvelles données (voir code précédent).")
-    # Insérez ici votre code de saisie précédent...
+# ==========================================
+# PAGE 1 : RECUEIL DES DONNÉES
+# ==========================================
+if page == "📝 Recueil des données":
+    st.title("📝 Saisie des indicateurs")
+    
+    liste_patients = ["Choisir...", "Jean Dupont", "Marie Curie", "Isaac Newton"]
+    nom_patient = st.selectbox("👤 Patient :", options=liste_patients)
 
-with tab2:
-    if not df_history.empty:
-        st.subheader("Visualisation de l'évolution temporelle")
-        
-        # Filtre par patient
-        patients = df_history["Patient"].unique()
-        patient_sel = st.selectbox("Sélectionnez un patient pour voir son historique :", patients)
-        
-        # Filtrage des données
-        df_patient = df_history[df_history["Patient"] == patient_sel].copy()
-        df_patient["Date"] = pd.to_datetime(df_patient["Date"])
-        df_patient = df_patient.sort_values("Date")
+    if nom_patient != "Choisir...":
+        with st.container():
+            st.write("### 1. Douleur")
+            douleur = st.select_slider("Intensité :", options=list(range(1, 11)), key="d1")
+            st.markdown(get_visual_indicator(douleur), unsafe_allow_html=True)
+            
+            st.divider()
+            
+            st.write("### 2. Bien-être (WHO-5)")
+            options_be = {"Tout le temps": 5, "Souvent": 4, "Parfois": 3, "Rarement": 2, "Jamais": 0}
+            choix_be = st.radio("Senti(e) gai(e) et de bonne humeur :", list(options_be.keys()), horizontal=True)
+            
+            st.divider()
+            
+            st.write("### 3. Fatigue")
+            fatigue = st.select_slider("Intensité :", options=list(range(1, 11)), value=5, key="f1")
+            st.markdown(get_visual_indicator(fatigue), unsafe_allow_html=True)
 
-        # Affichage des graphiques sur deux colonnes
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write("#### Évolution de la Douleur")
-            fig_douleur = px.line(
-                df_patient, x="Date", y="Douleur", 
-                title=f"Douleur - {patient_sel}",
-                markers=True, line_shape="spline",
-                color_discrete_sequence=["#dc2626"] # Rouge
-            )
-            fig_douleur.update_yaxes(range=[0, 11])
-            st.plotly_chart(fig_douleur, use_container_width=True)
-
-        with col2:
-            st.write("#### Évolution de la Fatigue")
-            fig_fatigue = px.line(
-                df_patient, x="Date", y="Fatigue", 
-                title=f"Fatigue - {patient_sel}",
-                markers=True, line_shape="spline",
-                color_discrete_sequence=["#f59e0b"] # Orange
-            )
-            fig_fatigue.update_yaxes(range=[0, 11])
-            st.plotly_chart(fig_fatigue, use_container_width=True)
-
-        # Affichage du tableau brut
-        with st.expander("Voir les données brutes"):
-            st.dataframe(df_patient)
+            if st.button(f"Enregistrer pour {nom_patient}"):
+                new_data = pd.DataFrame([{
+                    "Date": datetime.datetime.now().strftime("%Y-%m-%d"),
+                    "Patient": nom_patient,
+                    "Douleur": douleur,
+                    "Bien_etre": options_be[choix_be],
+                    "Fatigue": fatigue
+                }])
+                if conn:
+                    df_existing = conn.read()
+                    updated_df = pd.concat([df_existing, new_data], ignore_index=True)
+                    conn.update(data=updated_df)
+                    st.success("Données sauvegardées !")
     else:
-        st.warning("Aucune donnée trouvée dans le Cloud pour générer les graphiques.")
+        st.warning("Veuillez sélectionner un patient.")
+
+# ==========================================
+# PAGE 2 : VISUALISATION
+# ==========================================
+else:
+    st.title("📊 Analyse de l'évolution")
+    
+    if conn:
+        df = conn.read()
+        if not df.empty:
+            patient_sel = st.selectbox("Sélectionner un patient à analyser :", df["Patient"].unique())
+            df_p = df[df["Patient"] == patient_sel].copy()
+            df_p["Date"] = pd.to_datetime(df_p["Date"])
+            df_p = df_p.sort_values("Date")
+
+            # Graphique combiné
+            st.write(f"### Courbes de suivi : {patient_sel}")
+            
+            # Transformation pour Plotly (format long)
+            df_melted = df_p.melt(id_vars=['Date'], value_vars=['Douleur', 'Fatigue'], 
+                                  var_name='Indicateur', value_name='Score')
+            
+            fig = px.line(df_melted, x="Date", y="Score", color="Indicateur",
+                          markers=True, line_shape="spline",
+                          color_discrete_map={"Douleur": "#dc2626", "Fatigue": "#f59e0b"})
+            
+            fig.update_layout(yaxis=dict(range=[0, 11]), hovermode="x unified")
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Statistiques rapides
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Douleur Moyenne", round(df_p["Douleur"].mean(), 1))
+            c2.metric("Fatigue Moyenne", round(df_p["Fatigue"].mean(), 1))
+            c3.metric("Bien-être (Dernier)", df_p["Bien_etre"].iloc[-1])
+        else:
+            st.info("Aucune donnée disponible dans le Cloud.")
